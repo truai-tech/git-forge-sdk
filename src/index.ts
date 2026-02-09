@@ -18,6 +18,8 @@ export type {
   CreateBranchInput,
   CreatePullRequestInput,
   ListPullRequestsOptions,
+  CommitFileInput,
+  CommitResult,
 } from "./types.js";
 
 export type {

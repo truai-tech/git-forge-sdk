@@ -12,6 +12,8 @@ import {
 import type { GitForgeService } from "../GitForge.js";
 import type {
   Branch,
+  CommitFileInput,
+  CommitResult,
   CreateBranchInput,
   CreatePullRequestInput,
   ListPullRequestsOptions,
@@ -267,6 +269,74 @@ export function createAzureDevOpsProvider(
         },
         catch: (e) => mapError(e, "listBranches"),
       }),
+
+    // ─────────────────────────────────────────────────────────────────
+    // File Operations
+    // ─────────────────────────────────────────────────────────────────
+
+    commitFile: (repo: Repository, input: CommitFileInput) => {
+      const getLatestRef = (gitApi: any, repoName: string, project: string, branch: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            const refs = await gitApi.getRefs(repoName, project, `heads/${branch}`);
+            const ref = refs[0];
+            if (!ref?.objectId) {
+              throw new NotFoundError({
+                provider: PROVIDER,
+                resource: "branch",
+                identifier: branch,
+              });
+            }
+            return ref.objectId as string;
+          },
+          catch: (e) => {
+            if (e instanceof NotFoundError) return e;
+            return mapError(e, "commitFile");
+          },
+        });
+
+      const pushFile = (gitApi: any, repoName: string, project: string, branch: string, oldObjectId: string, changeType: number) =>
+        Effect.tryPromise({
+          try: () =>
+            gitApi.createPush(
+              {
+                refUpdates: [{ name: `refs/heads/${branch}`, oldObjectId }],
+                commits: [{
+                  comment: input.message,
+                  changes: [{
+                    changeType,
+                    item: { path: `/${input.path}` },
+                    newContent: { content: input.content, contentType: 0 },
+                  }],
+                }],
+              },
+              repoName,
+              project
+            ),
+          catch: (e) => mapError(e, "commitFile"),
+        });
+
+      return Effect.gen(function* () {
+        const project = getProject(repo);
+        const gitApi = yield* Effect.tryPromise({
+          try: () => connection.getGitApi(),
+          catch: (e) => mapError(e, "commitFile"),
+        });
+
+        const objectId = yield* getLatestRef(gitApi, repo.repo, project, input.branch);
+
+        // Azure DevOps requires the correct changeType (1=add, 2=edit)
+        // unlike GitHub/GitLab which auto-detect. Try add first, fall back to edit.
+        const push = yield* pushFile(gitApi, repo.repo, project, input.branch, objectId, 1).pipe(
+          Effect.catchAll(() => pushFile(gitApi, repo.repo, project, input.branch, objectId, 2))
+        );
+
+        return {
+          sha: (push as any).commits?.[0]?.commitId ?? "",
+          message: input.message,
+        } satisfies CommitResult;
+      });
+    },
 
     // ─────────────────────────────────────────────────────────────────
     // Pull Request Operations

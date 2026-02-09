@@ -11,6 +11,8 @@ import {
 import type { GitForgeService } from "../GitForge.js";
 import type {
   Branch,
+  CommitFileInput,
+  CommitResult,
   CreateBranchInput,
   CreatePullRequestInput,
   ListPullRequestsOptions,
@@ -201,6 +203,48 @@ export function createGitHubProvider(config: GitHubConfig): GitForgeService {
           );
         },
         catch: (e) => mapError(e, "listBranches"),
+      }),
+
+    // ─────────────────────────────────────────────────────────────────
+    // File Operations
+    // ─────────────────────────────────────────────────────────────────
+
+    commitFile: (repo: Repository, input: CommitFileInput) =>
+      Effect.tryPromise({
+        try: async () => {
+          // Check if file already exists to get its SHA
+          let existingSha: string | undefined;
+          try {
+            const { data } = await octokit.repos.getContent({
+              owner: repo.owner,
+              repo: repo.repo,
+              path: input.path,
+              ref: input.branch,
+            });
+            if (!Array.isArray(data) && data.type === "file") {
+              existingSha = data.sha;
+            }
+          } catch {
+            // File doesn't exist, which is fine
+          }
+
+          // Create or update the file
+          const { data } = await octokit.repos.createOrUpdateFileContents({
+            owner: repo.owner,
+            repo: repo.repo,
+            path: input.path,
+            message: input.message,
+            content: Buffer.from(input.content, "utf-8").toString("base64"),
+            branch: input.branch,
+            ...(existingSha && { sha: existingSha }),
+          });
+
+          return {
+            sha: data.commit.sha ?? "",
+            message: data.commit.message ?? input.message,
+          } satisfies CommitResult;
+        },
+        catch: (e) => mapError(e, "commitFile"),
       }),
 
     // ─────────────────────────────────────────────────────────────────
