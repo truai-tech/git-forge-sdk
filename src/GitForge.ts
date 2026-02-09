@@ -2,6 +2,8 @@ import { Context, type Effect } from "effect";
 import type { ForgeError } from "./errors.js";
 import type {
   Branch,
+  CommitFileInput,
+  CommitResult,
   CreateBranchInput,
   CreatePullRequestInput,
   ListPullRequestsOptions,
@@ -37,6 +39,18 @@ export interface GitForgeService {
    * List all branches in a repository
    */
   listBranches(repo: Repository): Effect.Effect<Branch[], ForgeError>;
+
+  // ─────────────────────────────────────────────────────────────────
+  // File Operations
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Commit a file to a branch (creates or updates)
+   */
+  commitFile(
+    repo: Repository,
+    input: CommitFileInput
+  ): Effect.Effect<CommitResult, ForgeError>;
 
   // ─────────────────────────────────────────────────────────────────
   // Pull Request Operations

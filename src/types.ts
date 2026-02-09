@@ -101,3 +101,27 @@ export interface ListPullRequestsOptions {
   /** Maximum number of results to return */
   limit?: number;
 }
+
+/**
+ * Input for committing a file to a branch
+ */
+export interface CommitFileInput {
+  /** Branch name to commit to */
+  branch: string;
+  /** File path within the repository */
+  path: string;
+  /** File content (UTF-8 encoded) */
+  content: string;
+  /** Commit message */
+  message: string;
+}
+
+/**
+ * Result of a file commit operation
+ */
+export interface CommitResult {
+  /** Commit SHA */
+  sha: string;
+  /** Commit message */
+  message: string;
+}

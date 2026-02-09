@@ -11,6 +11,8 @@ import {
 import type { GitForgeService } from "../GitForge.js";
 import type {
   Branch,
+  CommitFileInput,
+  CommitResult,
   CreateBranchInput,
   CreatePullRequestInput,
   ListPullRequestsOptions,
@@ -174,6 +176,56 @@ export function createGitLabProvider(config: GitLabConfig): GitForgeService {
       }),
 
     // ─────────────────────────────────────────────────────────────────
+    // File Operations
+    // ─────────────────────────────────────────────────────────────────
+
+    commitFile: (repo, input: CommitFileInput) =>
+      Effect.tryPromise({
+        try: async () => {
+          const projectId = getProjectId(repo.owner, repo.repo);
+
+          // Check if file exists
+          let fileExists = false;
+          try {
+            await gitlab.RepositoryFiles.show(projectId, input.path, input.branch);
+            fileExists = true;
+          } catch {
+            // File doesn't exist
+          }
+
+          // Create or update file
+          let result;
+          if (fileExists) {
+            result = await gitlab.RepositoryFiles.edit(
+              projectId,
+              input.path,
+              input.branch,
+              input.content,
+              input.message
+            );
+          } else {
+            result = await gitlab.RepositoryFiles.create(
+              projectId,
+              input.path,
+              input.branch,
+              input.content,
+              input.message
+            );
+          }
+
+          // GitLab returns file_path in the response, we need to get the commit SHA
+          // from a separate API call since file operations don't return it directly
+          const branch = await gitlab.Branches.show(projectId, input.branch);
+
+          return {
+            sha: branch.commit.id,
+            message: input.message,
+          } satisfies CommitResult;
+        },
+        catch: (e) => mapError(e, "commitFile"),
+      }),
+
+    // ─────────────────────────────────────────────────────────────────
     // Merge Request Operations
     // ─────────────────────────────────────────────────────────────────
 
@@ -182,13 +234,14 @@ export function createGitLabProvider(config: GitLabConfig): GitForgeService {
         try: async () => {
           const projectId = getProjectId(repo.owner, repo.repo);
 
+          // GitLab marks MRs as draft when title starts with "Draft: "
+          const title = input.draft ? `Draft: ${input.title}` : input.title;
+          
           const mr = await gitlab.MergeRequests.create(
             projectId,
             input.sourceBranch,
             input.targetBranch,
-            input.title,
-            // GitLab uses "draft:" prefix or WIP for drafts
-            // Only include description if provided
+            title,
             input.description !== undefined
               ? { description: input.description }
               : undefined
